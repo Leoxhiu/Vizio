@@ -1,0 +1,9 @@
+entrance_front
+entrance_left
+entrance_right
+escalator_front
+escalator_left
+escalator_right
+stair_front
+stair_left
+stair_right
