@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <capability
+        android:name="com.example.vizio.SET_MEASUREMENT"
+        app:queryPatterns="@array/measurementQueries">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.example.vizio.MainActivity"
+            android:targetPackage="com.example.vizio">
+            <parameter
+                android:name="measurement_type"
+                android:key="measurement_type"
+                android:mimeType="https://schema.org/Text" />
+            <url-template android:value="example://changeMeasurement/{measurement_type}" />
+        </intent>
+    </capability>
+</shortcuts>

@@ -8,11 +8,22 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:id="@+id/textureView"/>
-    
+
     <ImageView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#000"
-        android:id="@+id/ImageView"/>
-    
+        android:id="@+id/ImageView"
+        android:contentDescription="display" />
+
+    <!--creating a simple image view for mic-->
+    <ImageView
+        android:id="@+id/inputMic"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="600dp"
+        android:src="@drawable/baseline_mic_24"
+        android:contentDescription="userVoiceInput" />
+
 </RelativeLayout>

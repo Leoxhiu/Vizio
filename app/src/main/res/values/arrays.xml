@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="measurementQueries">
+        <item>change to $measurement_type</item>
+    </string-array>
+</resources>
