@@ -14,16 +14,16 @@
         android:layout_height="match_parent"
         android:background="#000"
         android:id="@+id/ImageView"
-        android:contentDescription="display" />
+        android:contentDescription="@string/display" />
 
     <!--creating a simple image view for mic-->
     <ImageView
         android:id="@+id/inputMic"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+        android:layout_width="150dp"
+        android:layout_height="150dp"
         android:layout_centerHorizontal="true"
-        android:layout_marginTop="600dp"
+        android:layout_marginTop="550dp"
         android:src="@drawable/baseline_mic_24"
-        android:contentDescription="userVoiceInput" />
+        android:contentDescription="@string/uservoiceinput" />
 
 </RelativeLayout>

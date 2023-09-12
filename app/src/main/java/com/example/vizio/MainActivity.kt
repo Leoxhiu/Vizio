@@ -76,8 +76,19 @@ class MainActivity : ComponentActivity() {
         const val FOCAL_ESCALATOR_SIDE = 79.76470588235294
         const val FOCAL_STAIR_FRONT = 76.68202764976958
         const val FOCAL_STAIR_SIDE = 70.23041474654379
-
     }
+
+    private val labelMapping = mapOf(
+        "entrance_front" to "train entrance",
+        "entrance_left" to "train entrance",
+        "entrance_right" to "train entrance",
+        "escalator_front" to "escalator",
+        "escalator_left" to "escalator",
+        "escalator_right" to "escalator",
+        "stair_front" to "stair",
+        "stair_left" to "stair",
+        "stair_right" to "stair"
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -174,33 +185,15 @@ class MainActivity : ComponentActivity() {
                         paint.setColor(colors.get(index))
                         paint.style = Paint.Style.STROKE
 
+                        // Find width in frame
                         // Multiply 320x320 resolution
                         val xmin = locations[x + 1] * 320
                         val xmax = locations[x + 3] * 320
-
                         val objectWidthInFrame = (xmax - xmin).toDouble()
 
-                        Log.d("xmin: ",  xmin.toString())
-                        Log.d("xmax: ",  xmax.toString())
-                        Log.d("w: ",  w.toString())
-                        Log.d("Width in frame: ",  objectWidthInFrame.toString())
-
-                        canvas.drawRect(RectF(locations.get(x+1)*w, locations.get(x)*h, locations.get(x+3)*w, locations.get(x+2)*h), paint)
-                        paint.style = Paint.Style.FILL
-
+                        // Get label and format label
                         val rawLabel = labels.get(classes.get(index).toInt())
-                        val formattedLabel = formatLabel(rawLabel)
-
-
-//                    Log.d("scores", "1 : "
-//                            + scores[0].toString() + "," + scores[1].toString() +"," + scores[2].toString() +"," + scores[3].toString()
-//                            + scores[4].toString() + "," + scores[5].toString() +"," + scores[6].toString() +"," + scores[7].toString()
-//                            + scores[8].toString() + "," + scores[9].toString()
-//                    )
-//                    Log.d("locations", "2 : " + locations[0].toString())
-//                    Log.d("numberOfDetections", "3 : " + numberOfDetections[0].toString())
-//                    Log.d("classes", "4 : " + classes[0].toString())
-
+                        val formattedLabel = labelMapping[rawLabel] ?: rawLabel
 
                         var distance: Double = 0.0
                         var audioFeedback = ""
@@ -250,14 +243,16 @@ class MainActivity : ComponentActivity() {
                         }
 
                         textFeedback = when (normalizedUnit) {
-                            "inches" -> "$rawLabel $roundedScore% ${distance.roundToInt()} inches away"
-                            "feet" -> "$rawLabel $roundedScore% ${(distance / 12.0).roundToInt()} feet away"
+                            "inches" -> "$formattedLabel $roundedScore% ${distance.roundToInt()} inches away"
+                            "feet" -> "$formattedLabel $roundedScore% ${(distance / 12.0).roundToInt()} feet away"
                             "metres" -> "$formattedLabel ${String.format("%.2f", distance * 0.0254)} metres away"
-                            "centimetres" -> "$rawLabel $roundedScore% ${(distance * 2.54).roundToInt()} centimetres away"
-                            "millimetres" ->"$rawLabel $roundedScore% ${(distance * 25.4).roundToInt()} millimetres away"
-                            else -> "$rawLabel $roundedScore% ${distance.roundToInt()} inches away"
+                            "centimetres" -> "$formattedLabel $roundedScore% ${(distance * 2.54).roundToInt()} centimetres away"
+                            "millimetres" ->"$formattedLabel $roundedScore% ${(distance * 25.4).roundToInt()} millimetres away"
+                            else -> "$formattedLabel $roundedScore% ${distance.roundToInt()} inches away"
                         }
 
+                        canvas.drawRect(RectF(locations.get(x+1)*w, locations.get(x)*h, locations.get(x+3)*w, locations.get(x+2)*h), paint)
+                        paint.style = Paint.Style.FILL
                         canvas.drawText(rawLabel, locations.get(x+1)*w, locations.get(x)*h, paint)
 
                         // Check if the text-to-speech engine is currently speaking.
@@ -285,16 +280,6 @@ class MainActivity : ComponentActivity() {
 
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
-    }
-
-    private fun formatLabel(rawLabel: String): String {
-        val parts = rawLabel.split('_')
-        if (parts.size == 2) {
-            val objectPart = parts[0].capitalize()
-            val directionPart = parts[1].capitalize()
-            return "$objectPart at $directionPart"
-        }
-        return rawLabel // return original label if it doesn't match expected format
     }
 
     private fun distanceFinder(focalLength: Double, realObjectWidth: Double, widthInFrame: Double): Double {

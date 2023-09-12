@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Vizio</string>
+    <string name="display">display</string>
+    <string name="uservoiceinput">userVoiceInput</string>
 </resources>
