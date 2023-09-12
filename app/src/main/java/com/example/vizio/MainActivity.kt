@@ -59,11 +59,12 @@ class MainActivity : ComponentActivity() {
     private var tts: TextToSpeech? = null
     private var lastSpokenLabel: String? = null
     private var lastSpokenTime: Long = 0
-    private var DEBOUNCE_TIME = 4000 // initial 4 seconds
+    private var DEBOUNCE_TIME = 3000 // initial 3 seconds
     private var speak = true
 
     private val REQUEST_CODE_SPEECH_INPUT = 1
     private var currentUnit: String = "inches"
+    private var warningEnabled = false
 
     companion object {
         const val ENTRANCE_WIDTH = 60.666666666666664 //inches
@@ -233,15 +234,19 @@ class MainActivity : ComponentActivity() {
                             else -> currentUnit
                         }
 
-                        audioFeedback = when (normalizedUnit) {
-                            "inches" -> "$formattedLabel ${distance.roundToInt()} inches away"
-                            "feet" -> "$formattedLabel ${(distance / 12.0).roundToInt()} feet away"
-                            "metres" -> "$formattedLabel ${String.format("%.2f", distance * 0.0254)} metres away"
-                            "centimetres" -> "$formattedLabel ${(distance * 2.54).roundToInt()} centimetres away"
-                            "millimetres" -> "$formattedLabel ${(distance * 25.4).roundToInt()} millimetres away"
-                            else -> "$formattedLabel ${distance.roundToInt()} inches away"
+                        // Generate the base feedback first
+                        audioFeedback = if (warningEnabled) {
+                            if (distance < 50) "$formattedLabel Be careful!" else "$formattedLabel"
+                        } else {
+                            when (normalizedUnit) {
+                                "inches" -> "$formattedLabel ${distance.roundToInt()} inches away"
+                                "feet" -> "$formattedLabel ${(distance / 12.0).roundToInt()} feet away"
+                                "metres" -> "$formattedLabel ${String.format("%.2f", distance * 0.0254)} metres away"
+                                "centimetres" -> "$formattedLabel ${(distance * 2.54).roundToInt()} centimetres away"
+                                "millimetres" -> "$formattedLabel ${(distance * 25.4).roundToInt()} millimetres away"
+                                else -> "$formattedLabel ${distance.roundToInt()} inches away"
+                            }
                         }
-
                         textFeedback = when (normalizedUnit) {
                             "inches" -> "$formattedLabel $roundedScore% ${distance.roundToInt()} inches away"
                             "feet" -> "$formattedLabel $roundedScore% ${(distance / 12.0).roundToInt()} feet away"
@@ -261,9 +266,9 @@ class MainActivity : ComponentActivity() {
                         // Check if the text-to-speech engine is currently speaking and if it should speak
                         if (!isTTSSpeaking && speak) {
                             val currentTime = System.currentTimeMillis()
-                            if (rawLabel != lastSpokenLabel || (currentTime - lastSpokenTime) > DEBOUNCE_TIME) {
+                            if (formattedLabel != lastSpokenLabel || (currentTime - lastSpokenTime) > DEBOUNCE_TIME) {
                                 tts?.speak(audioFeedback, TextToSpeech.QUEUE_FLUSH, null, null)
-                                lastSpokenLabel = rawLabel
+                                lastSpokenLabel = formattedLabel
                                 lastSpokenTime = currentTime
                             }
                         }
@@ -309,8 +314,9 @@ class MainActivity : ComponentActivity() {
             val recognizedText = res[0].toLowerCase(Locale.ROOT)
 
             val voiceCommands = listOf(
-                VoiceCommand("(?:change )?(?:unit of )?measurements? (?:to|2) (.+)") { match ->
+                VoiceCommand("(?:change )?(?:unit of )?measurements? (?:to|2) (inch|inches|foot|feet|metre|metres|centimetre|centimetres|millimetre|millimetres)") { match ->
                     currentUnit = match.groups[1]?.value ?: ""
+                    warningEnabled = false
                 },
                 VoiceCommand("(?:set )?(?:a )?(bounce|debounce|report) (rate|time) (?:to|2) (\\d+)(?: seconds)?") { match ->
                     val newRate = match.groups[3]?.value?.toIntOrNull()
@@ -320,6 +326,9 @@ class MainActivity : ComponentActivity() {
                         speak = true
                         tts?.speak("Invalid rate.", TextToSpeech.QUEUE_FLUSH, null, null)
                     }
+                },
+                VoiceCommand("(no measurement|no measurements|disable measurement|disable measurements)") { _ ->
+                    warningEnabled = true
                 }
             )
 
