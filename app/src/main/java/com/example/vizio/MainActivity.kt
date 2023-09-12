@@ -1,6 +1,5 @@
 package com.example.vizio
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,8 +9,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.SurfaceTexture
-import android.hardware.camera2.CameraCaptureSession
-import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
 import android.os.Handler
@@ -20,7 +17,6 @@ import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
-import android.view.Surface
 import android.view.TextureView
 import android.widget.ImageView
 import android.widget.Toast
@@ -39,32 +35,31 @@ import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
-    private var colors = listOf<Int>(
+    var colors = listOf<Int>(
         Color.BLUE, Color.GREEN, Color.RED, Color.CYAN, Color.GRAY, Color.BLACK,
         Color.DKGRAY, Color.MAGENTA, Color.YELLOW, Color.RED)
 
-    private val CAMERA_REQUEST_CODE = 101
+    private lateinit var layoutInitializer: LayoutInitializer
+
+    val CAMERA_REQUEST_CODE = 101
     lateinit var cameraManager: CameraManager
-    lateinit var cameraDevice: CameraDevice
-    lateinit var textureView: TextureView
-    lateinit var imageView: ImageView
-    lateinit var inputMic: ImageView
+    lateinit var cameraHandler: CameraHandler
     lateinit var handler: Handler
     lateinit var bitmap: Bitmap
     lateinit var model: Vizio8
     lateinit var imageProcessor: ImageProcessor
     lateinit var labels: List<String>
-    private val paint = Paint()
+    val paint = Paint()
 
-    private var tts: TextToSpeech? = null
-    private var lastSpokenLabel: String? = null
-    private var lastSpokenTime: Long = 0
-    private var DEBOUNCE_TIME = 3000 // initial 3 seconds
-    private var speak = true
+    var tts: TextToSpeech? = null
+    var lastSpokenLabel: String? = null
+    var lastSpokenTime: Long = 0
+    var DEBOUNCE_TIME = 3000 // initial 3 seconds
+    var speak = true
 
     private val REQUEST_CODE_SPEECH_INPUT = 1
-    private var currentUnit: String = "inches"
-    private var warningEnabled = false
+    var currentUnit: String = "inches"
+    var warningEnabled = false
 
     companion object {
         const val ENTRANCE_WIDTH = 60.666666666666664 //inches
@@ -79,7 +74,7 @@ class MainActivity : ComponentActivity() {
         const val FOCAL_STAIR_SIDE = 70.23041474654379
     }
 
-    private val labelMapping = mapOf(
+    val labelMapping = mapOf(
         "entrance_front" to "train entrance",
         "entrance_left" to "train entrance",
         "entrance_right" to "train entrance",
@@ -105,193 +100,17 @@ class MainActivity : ComponentActivity() {
         val handlerThread = HandlerThread("videoThread")
         handlerThread.start()
         handler = Handler(handlerThread.looper)
+        cameraHandler = CameraHandler(this, handler)
 
-        imageView = findViewById(R.id.ImageView)
-        textureView = findViewById(R.id.textureView)
-        inputMic = findViewById(R.id.inputMic)
-        inputMic.setOnClickListener {
-            val utteranceId = "prompt_utterance_id"
-            tts?.speak("How can Vizio help you?", TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-        }
-
-        textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(p0: SurfaceTexture, p1: Int, p2: Int) {
-                tts = TextToSpeech(this@MainActivity) { status ->
-                    if (status != TextToSpeech.ERROR) {
-                        val result = tts?.setLanguage(Locale.US)
-                        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                            // Notify the user that the language data is missing or not supported
-                            Log.e("TTS", "Language not supported or missing data")
-
-                        } else {
-                            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                                override fun onStart(utteranceId: String?) {
-                                    // Called when the TTS starts speaking
-                                }
-
-                                override fun onDone(utteranceId: String?) {
-                                    // Called when the TTS finishes speaking
-                                    startSpeechRecognition()
-                                }
-
-                                override fun onError(utteranceId: String?) {
-                                }
-                            })
-                        }
-                    } else {
-                        Log.e("TTS", "Initialization failed")
-                    }
-                }
-                open_camera()
-            }
-
-            override fun onSurfaceTextureSizeChanged(p0: SurfaceTexture, p1: Int, p2: Int) {
-            }
-
-            override fun onSurfaceTextureDestroyed(p0: SurfaceTexture): Boolean {
-                return false
-            }
-
-            override fun onSurfaceTextureUpdated(p0: SurfaceTexture) {
-                bitmap = textureView.bitmap!!
-//                bitmap = Bitmap.createScaledBitmap(bitmap, 320, 320,true)
-
-                val inputFeature0 = TensorBuffer.createFixedSize(intArrayOf(1, 320, 320, 3), DataType.FLOAT32)
-                var tensorImage = TensorImage(DataType.FLOAT32)
-                tensorImage.load(bitmap)
-                tensorImage = imageProcessor.process(tensorImage)
-                inputFeature0.loadBuffer(tensorImage.buffer)
-
-                val outputs = model.process(inputFeature0)
-                val scores = outputs.outputFeature0AsTensorBuffer.floatArray
-                val locations = outputs.outputFeature1AsTensorBuffer.floatArray
-                val numberOfDetections = outputs.outputFeature2AsTensorBuffer.floatArray
-                val classes = outputs.outputFeature3AsTensorBuffer.floatArray
-
-                var mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-                val canvas = Canvas(mutable)
-
-                val h = mutable.height
-                val w = mutable.width
-
-                paint.textSize = h/25f
-                paint.strokeWidth = h/95f
-                var x = 0
-
-                scores.forEachIndexed { index, score ->
-                    x = index
-                    x *= 4
-
-                    if(score > 0.7){
-                        paint.setColor(colors.get(index))
-                        paint.style = Paint.Style.STROKE
-
-                        // Find width in frame
-                        // Multiply 320x320 resolution
-                        val xmin = locations[x + 1] * 320
-                        val xmax = locations[x + 3] * 320
-                        val objectWidthInFrame = (xmax - xmin).toDouble()
-
-                        // Get label and format label
-                        val rawLabel = labels.get(classes.get(index).toInt())
-                        val formattedLabel = labelMapping[rawLabel] ?: rawLabel
-
-                        var distance: Double = 0.0
-                        var audioFeedback = ""
-                        var textFeedback = ""
-
-                        when (rawLabel) {
-                            "entrance_front" -> {
-                                distance = distanceFinder(FOCAL_ENTRANCE_FRONT, ENTRANCE_WIDTH, objectWidthInFrame)
-                            }
-                            "entrance_left", "entrance_right" -> {
-                                distance = distanceFinder(FOCAL_ENTRANCE_SIDE, ENTRANCE_WIDTH, objectWidthInFrame)
-                            }
-
-                            "escalator_front" -> {
-                                distance = distanceFinder(FOCAL_ESCALATOR_FRONT, ESCALATOR_WIDTH, objectWidthInFrame)
-                            }
-                            "escalator_left", "escalator_right" -> {
-                                distance = distanceFinder(FOCAL_ESCALATOR_SIDE, ESCALATOR_WIDTH, objectWidthInFrame)
-                            }
-
-                            "stair_front" -> {
-                                distance = distanceFinder(FOCAL_STAIR_FRONT, STAIR_WIDTH, objectWidthInFrame)
-                            }
-                            "stair_left", "stair_right" -> {
-                                distance = distanceFinder(FOCAL_STAIR_SIDE, STAIR_WIDTH, objectWidthInFrame)
-                            }
-                        }
-
-                        val roundedScore = String.format("%.2f", score * 100)
-
-                        val normalizedUnit = when (currentUnit) {
-                            "inch" -> "inches"
-                            "foot" -> "feet"
-                            "metre" -> "metres"
-                            "centimetre" -> "centimetres"
-                            "millimetre" -> "millimetres"
-                            else -> currentUnit
-                        }
-
-                        // Generate the base feedback first
-                        audioFeedback = if (warningEnabled) {
-                            if (distance < 50) "$formattedLabel Be careful!" else "$formattedLabel"
-                        } else {
-                            when (normalizedUnit) {
-                                "inches" -> "$formattedLabel ${distance.roundToInt()} inches away"
-                                "feet" -> "$formattedLabel ${(distance / 12.0).roundToInt()} feet away"
-                                "metres" -> "$formattedLabel ${String.format("%.2f", distance * 0.0254)} metres away"
-                                "centimetres" -> "$formattedLabel ${(distance * 2.54).roundToInt()} centimetres away"
-                                "millimetres" -> "$formattedLabel ${(distance * 25.4).roundToInt()} millimetres away"
-                                else -> "$formattedLabel ${distance.roundToInt()} inches away"
-                            }
-                        }
-                        textFeedback = when (normalizedUnit) {
-                            "inches" -> "$formattedLabel $roundedScore% ${distance.roundToInt()} inches away"
-                            "feet" -> "$formattedLabel $roundedScore% ${(distance / 12.0).roundToInt()} feet away"
-                            "metres" -> "$formattedLabel ${String.format("%.2f", distance * 0.0254)} metres away"
-                            "centimetres" -> "$formattedLabel $roundedScore% ${(distance * 2.54).roundToInt()} centimetres away"
-                            "millimetres" ->"$formattedLabel $roundedScore% ${(distance * 25.4).roundToInt()} millimetres away"
-                            else -> "$formattedLabel $roundedScore% ${distance.roundToInt()} inches away"
-                        }
-
-                        canvas.drawRect(RectF(locations.get(x+1)*w, locations.get(x)*h, locations.get(x+3)*w, locations.get(x+2)*h), paint)
-                        paint.style = Paint.Style.FILL
-                        canvas.drawText(rawLabel, locations.get(x+1)*w, locations.get(x)*h, paint)
-
-                        // Check if the text-to-speech engine is currently speaking.
-                        val isTTSSpeaking = tts?.isSpeaking ?: false
-
-                        // Check if the text-to-speech engine is currently speaking and if it should speak
-                        if (!isTTSSpeaking && speak) {
-                            val currentTime = System.currentTimeMillis()
-                            if (formattedLabel != lastSpokenLabel || (currentTime - lastSpokenTime) > DEBOUNCE_TIME) {
-                                tts?.speak(audioFeedback, TextToSpeech.QUEUE_FLUSH, null, null)
-                                lastSpokenLabel = formattedLabel
-                                lastSpokenTime = currentTime
-                            }
-                        }
-
-                        Toast.makeText( this@MainActivity, textFeedback, Toast.LENGTH_SHORT).show()
-                    }
-                }
-
-                imageView.setImageBitmap(mutable)
-
-            }
-
-        }
-
-        cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-
+        layoutInitializer = LayoutInitializer(this)
+        layoutInitializer.initialize()
     }
 
-    private fun distanceFinder(focalLength: Double, realObjectWidth: Double, widthInFrame: Double): Double {
+    fun distanceFinder(focalLength: Double, realObjectWidth: Double, widthInFrame: Double): Double {
         return (realObjectWidth * focalLength) / widthInFrame
     }
 
-    private fun startSpeechRecognition() {
+    fun startSpeechRecognition() {
         speak = false
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -311,7 +130,7 @@ class MainActivity : ComponentActivity() {
 
         if (requestCode == REQUEST_CODE_SPEECH_INPUT && resultCode == RESULT_OK && data != null) {
             val res: ArrayList<String> = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS) as ArrayList<String>
-            val recognizedText = res[0].toLowerCase(Locale.ROOT)
+            val recognizedText = res[0].lowercase(Locale.ROOT)
 
             val voiceCommands = listOf(
                 VoiceCommand("(?:change )?(?:unit of )?measurements? (?:to|2) (inch|inches|foot|feet|metre|metres|centimetre|centimetres|millimetre|millimetres)") { match ->
@@ -354,37 +173,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun open_camera(){
-        cameraManager.openCamera(cameraManager.cameraIdList[0], object: CameraDevice.StateCallback(){
-            override fun onOpened(p0: CameraDevice) {
-                cameraDevice = p0
-
-                var surfaceTexture = textureView.surfaceTexture
-                var surface = Surface(surfaceTexture)
-
-                var captureRequest = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-                captureRequest.addTarget(surface)
-
-                cameraDevice.createCaptureSession(listOf(surface), object: CameraCaptureSession.StateCallback(){
-                    override fun onConfigured(p0: CameraCaptureSession) {
-                        p0.setRepeatingRequest(captureRequest.build(), null, null)
-                    }
-                    override fun onConfigureFailed(p0: CameraCaptureSession) {
-                    }
-                }, handler)
-            }
-
-            override fun onDisconnected(p0: CameraDevice) {
-
-            }
-
-            override fun onError(p0: CameraDevice, p1: Int) {
-
-            }
-        }, handler)
-    }
-
     override fun onDestroy() {
         tts?.stop()
         tts?.shutdown()
@@ -410,4 +198,202 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+}
+
+class LayoutInitializer(private val activity: MainActivity) {
+
+    val imageView: ImageView by lazy { activity.findViewById(R.id.ImageView) }
+    val textureView: TextureView by lazy { activity.findViewById(R.id.textureView) }
+    val inputMic: ImageView by lazy { activity.findViewById(R.id.inputMic) }
+
+    fun initialize() {
+        inputMic.setOnClickListener {
+            val utteranceId = "prompt_utterance_id"
+            activity.tts?.speak("How can Vizio help you?", TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        }
+
+        textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(p0: SurfaceTexture, p1: Int, p2: Int) {
+                activity.tts = TextToSpeech(activity) { status ->
+                    if (status != TextToSpeech.ERROR) {
+                        val result = activity.tts?.setLanguage(Locale.US)
+                        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                            // Notify the user that the language data is missing or not supported
+                            Log.e("TTS", "Language not supported or missing data")
+
+                        } else {
+                            activity.tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                                override fun onStart(utteranceId: String?) {
+                                    // Called when the TTS starts speaking
+                                }
+
+                                override fun onDone(utteranceId: String?) {
+                                    // Called when the TTS finishes speaking
+                                    activity.startSpeechRecognition()
+                                }
+
+                                override fun onError(utteranceId: String?) {
+                                }
+                            })
+                        }
+                    } else {
+                        Log.e("TTS", "Initialization failed")
+                    }
+                }
+                activity.cameraHandler.openCamera(activity.cameraManager, textureView)
+            }
+
+            override fun onSurfaceTextureSizeChanged(p0: SurfaceTexture, p1: Int, p2: Int) {
+            }
+
+            override fun onSurfaceTextureDestroyed(p0: SurfaceTexture): Boolean {
+                return false
+            }
+
+            override fun onSurfaceTextureUpdated(p0: SurfaceTexture) {
+                activity.bitmap = textureView.bitmap!!
+//                bitmap = Bitmap.createScaledBitmap(bitmap, 320, 320,true)
+
+                val inputFeature0 = TensorBuffer.createFixedSize(intArrayOf(1, 320, 320, 3), DataType.FLOAT32)
+                var tensorImage = TensorImage(DataType.FLOAT32)
+                tensorImage.load(activity.bitmap)
+                tensorImage = activity.imageProcessor.process(tensorImage)
+                inputFeature0.loadBuffer(tensorImage.buffer)
+
+                val outputs = activity.model.process(inputFeature0)
+                val scores = outputs.outputFeature0AsTensorBuffer.floatArray
+                val locations = outputs.outputFeature1AsTensorBuffer.floatArray
+                val numberOfDetections = outputs.outputFeature2AsTensorBuffer.floatArray
+                val classes = outputs.outputFeature3AsTensorBuffer.floatArray
+
+                var mutable = activity.bitmap.copy(Bitmap.Config.ARGB_8888, true)
+                val canvas = Canvas(mutable)
+
+                val h = mutable.height
+                val w = mutable.width
+
+                activity.paint.textSize = h/25f
+                activity.paint.strokeWidth = h/95f
+                var x = 0
+
+                scores.forEachIndexed { index, score ->
+                    x = index
+                    x *= 4
+
+                    if(score > 0.7){
+                        activity.paint.setColor(activity.colors.get(index))
+                        activity.paint.style = Paint.Style.STROKE
+
+                        // Find width in frame
+                        // Multiply 320x320 resolution
+                        val xmin = locations[x + 1] * 320
+                        val xmax = locations[x + 3] * 320
+                        val objectWidthInFrame = (xmax - xmin).toDouble()
+
+                        // Get label and format label
+                        val rawLabel = activity.labels.get(classes.get(index).toInt())
+                        val formattedLabel = activity.labelMapping[rawLabel] ?: rawLabel
+
+                        var distance = 0.0
+                        var audioFeedback: String
+                        var textFeedback: String
+
+                        when (rawLabel) {
+                            "entrance_front" -> {
+                                distance = activity.distanceFinder(
+                                    MainActivity.FOCAL_ENTRANCE_FRONT,
+                                    MainActivity.ENTRANCE_WIDTH, objectWidthInFrame)
+                            }
+                            "entrance_left", "entrance_right" -> {
+                                distance = activity.distanceFinder(
+                                    MainActivity.FOCAL_ENTRANCE_SIDE,
+                                    MainActivity.ENTRANCE_WIDTH, objectWidthInFrame)
+                            }
+
+                            "escalator_front" -> {
+                                distance = activity.distanceFinder(
+                                    MainActivity.FOCAL_ESCALATOR_FRONT,
+                                    MainActivity.ESCALATOR_WIDTH, objectWidthInFrame)
+                            }
+                            "escalator_left", "escalator_right" -> {
+                                distance = activity.distanceFinder(
+                                    MainActivity.FOCAL_ESCALATOR_SIDE,
+                                    MainActivity.ESCALATOR_WIDTH, objectWidthInFrame)
+                            }
+
+                            "stair_front" -> {
+                                distance = activity.distanceFinder(
+                                    MainActivity.FOCAL_STAIR_FRONT,
+                                    MainActivity.STAIR_WIDTH, objectWidthInFrame)
+                            }
+                            "stair_left", "stair_right" -> {
+                                distance = activity.distanceFinder(
+                                    MainActivity.FOCAL_STAIR_SIDE,
+                                    MainActivity.STAIR_WIDTH, objectWidthInFrame)
+                            }
+                        }
+
+                        val roundedScore = String.format("%.2f", score * 100)
+
+                        val normalizedUnit = when (activity.currentUnit) {
+                            "inch" -> "inches"
+                            "foot" -> "feet"
+                            "metre" -> "metres"
+                            "centimetre" -> "centimetres"
+                            "millimetre" -> "millimetres"
+                            else -> activity.currentUnit
+                        }
+
+                        // Generate the base feedback first
+                        audioFeedback = if (activity.warningEnabled) {
+                            if (distance < 50) "$formattedLabel Be careful!" else formattedLabel
+                        } else {
+                            when (normalizedUnit) {
+                                "inches" -> "$formattedLabel ${distance.roundToInt()} inches away"
+                                "feet" -> "$formattedLabel ${(distance / 12.0).roundToInt()} feet away"
+                                "metres" -> "$formattedLabel ${String.format("%.2f", distance * 0.0254)} metres away"
+                                "centimetres" -> "$formattedLabel ${(distance * 2.54).roundToInt()} centimetres away"
+                                "millimetres" -> "$formattedLabel ${(distance * 25.4).roundToInt()} millimetres away"
+                                else -> "$formattedLabel ${distance.roundToInt()} inches away"
+                            }
+                        }
+                        textFeedback = when (normalizedUnit) {
+                            "inches" -> "$formattedLabel $roundedScore% ${distance.roundToInt()} inches away"
+                            "feet" -> "$formattedLabel $roundedScore% ${(distance / 12.0).roundToInt()} feet away"
+                            "metres" -> "$formattedLabel ${String.format("%.2f", distance * 0.0254)} metres away"
+                            "centimetres" -> "$formattedLabel $roundedScore% ${(distance * 2.54).roundToInt()} centimetres away"
+                            "millimetres" ->"$formattedLabel $roundedScore% ${(distance * 25.4).roundToInt()} millimetres away"
+                            else -> "$formattedLabel $roundedScore% ${distance.roundToInt()} inches away"
+                        }
+
+                        canvas.drawRect(RectF(locations.get(x+1)*w, locations.get(x)*h, locations.get(x+3)*w, locations.get(x+2)*h), activity.paint)
+                        activity.paint.style = Paint.Style.FILL
+                        canvas.drawText(rawLabel, locations.get(x+1)*w, locations.get(x)*h, activity.paint)
+
+                        // Check if the text-to-speech engine is currently speaking.
+                        val isTTSSpeaking = activity.tts?.isSpeaking ?: false
+
+                        // Check if the text-to-speech engine is currently speaking and if it should speak
+                        if (!isTTSSpeaking && activity.speak) {
+                            val currentTime = System.currentTimeMillis()
+                            if (formattedLabel != activity.lastSpokenLabel || (currentTime - activity.lastSpokenTime) > activity.DEBOUNCE_TIME) {
+                                activity.tts?.speak(audioFeedback, TextToSpeech.QUEUE_FLUSH, null, null)
+                                activity.lastSpokenLabel = formattedLabel
+                                activity.lastSpokenTime = currentTime
+                            }
+                        }
+
+                        Toast.makeText( activity, textFeedback, Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                imageView.setImageBitmap(mutable)
+
+            }
+
+        }
+
+        activity.cameraManager = activity.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+
+    }
 }
