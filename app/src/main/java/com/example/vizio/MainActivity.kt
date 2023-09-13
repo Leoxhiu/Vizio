@@ -51,10 +51,12 @@ class MainActivity : ComponentActivity() {
     lateinit var labels: List<String>
     val paint = Paint()
 
+    var scoreThreshold = 90 // initial 90%
+
     var tts: TextToSpeech? = null
     var lastSpokenLabel: String? = null
     var lastSpokenTime: Long = 0
-    var DEBOUNCE_TIME = 3000 // initial 3 seconds
+    var debounceTime = 3000 // initial 3 seconds
     var speak = true
 
     private val REQUEST_CODE_SPEECH_INPUT = 1
@@ -75,15 +77,15 @@ class MainActivity : ComponentActivity() {
     }
 
     val labelMapping = mapOf(
-        "entrance_front" to "train entrance",
-        "entrance_left" to "train entrance",
-        "entrance_right" to "train entrance",
-        "escalator_front" to "escalator",
-        "escalator_left" to "escalator",
-        "escalator_right" to "escalator",
-        "stair_front" to "stair",
-        "stair_left" to "stair",
-        "stair_right" to "stair"
+        "entrance_front" to "entrance at front",
+        "entrance_left" to "entrance at left",
+        "entrance_right" to "entrance at right",
+        "escalator_front" to "escalator at front",
+        "escalator_left" to "escalator at left",
+        "escalator_right" to "escalator at right",
+        "stair_front" to "stair at front",
+        "stair_left" to "stair at left",
+        "stair_right" to "stair at right"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -137,17 +139,26 @@ class MainActivity : ComponentActivity() {
                     currentUnit = match.groups[1]?.value ?: ""
                     warningEnabled = false
                 },
+                VoiceCommand("(no measurement|no measurements|disable measurement|disable measurements)") { _ ->
+                    warningEnabled = true
+                },
                 VoiceCommand("(?:set )?(?:a )?(bounce|debounce|report) (rate|time) (?:to|2) (\\d+)(?: seconds)?") { match ->
                     val newRate = match.groups[3]?.value?.toIntOrNull()
                     if (newRate != null && newRate > 0) {
-                        DEBOUNCE_TIME = newRate * 1000
+                        debounceTime = newRate * 1000
                     } else {
                         speak = true
                         tts?.speak("Invalid rate.", TextToSpeech.QUEUE_FLUSH, null, null)
                     }
                 },
-                VoiceCommand("(no measurement|no measurements|disable measurement|disable measurements)") { _ ->
-                    warningEnabled = true
+                VoiceCommand("(thresholds? (?:change )?to (\\d{2}))") { match ->
+                    val newValue = match.groups[2]?.value?.toIntOrNull()
+                    if (newValue != null && newValue in 10..99) {
+                        scoreThreshold = newValue
+                    } else {
+                        speak = true
+                        tts?.speak("Invalid threshold value.", TextToSpeech.QUEUE_FLUSH, null, null)
+                    }
                 }
             )
 
@@ -280,7 +291,7 @@ class LayoutInitializer(private val activity: MainActivity) {
                     x = index
                     x *= 4
 
-                    if(score > 0.7){
+                    if(score > (activity.scoreThreshold / 100.0)){
                         activity.paint.setColor(activity.colors.get(index))
                         activity.paint.style = Paint.Style.STROKE
 
@@ -376,7 +387,7 @@ class LayoutInitializer(private val activity: MainActivity) {
                         // Check if the text-to-speech engine is currently speaking and if it should speak
                         if (!isTTSSpeaking && activity.speak) {
                             val currentTime = System.currentTimeMillis()
-                            if (formattedLabel != activity.lastSpokenLabel || (currentTime - activity.lastSpokenTime) > activity.DEBOUNCE_TIME) {
+                            if (formattedLabel != activity.lastSpokenLabel || (currentTime - activity.lastSpokenTime) > activity.debounceTime) {
                                 activity.tts?.speak(audioFeedback, TextToSpeech.QUEUE_FLUSH, null, null)
                                 activity.lastSpokenLabel = formattedLabel
                                 activity.lastSpokenTime = currentTime
