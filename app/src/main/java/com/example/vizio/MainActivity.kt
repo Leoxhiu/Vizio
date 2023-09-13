@@ -22,7 +22,7 @@ import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
-import com.example.vizio.ml.Vizio8
+import com.example.vizio.ml.Vizio12
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.support.common.FileUtil
 import org.tensorflow.lite.support.common.ops.NormalizeOp
@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
     lateinit var cameraHandler: CameraHandler
     lateinit var handler: Handler
     lateinit var bitmap: Bitmap
-    lateinit var model: Vizio8
+    lateinit var model: Vizio12
     lateinit var imageProcessor: ImageProcessor
     lateinit var labels: List<String>
     val paint = Paint()
@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
             .add(ResizeOp(320, 320, ResizeOp.ResizeMethod.BILINEAR))
             .add(NormalizeOp(0f, 255f)) // Normalize by scaling with 1/255
             .build()
-        model = Vizio8.newInstance(this)
+        model = Vizio12.newInstance(this)
         val handlerThread = HandlerThread("videoThread")
         handlerThread.start()
         handler = Handler(handlerThread.looper)
