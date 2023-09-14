@@ -68,24 +68,24 @@ class MainActivity : ComponentActivity() {
         const val ESCALATOR_WIDTH = 56.666666666666664 //inches
         const val STAIR_WIDTH = 72.33333333333333 //inches
 
-        const val FOCAL_ENTRANCE_FRONT = 74.72527472527473
-        const val FOCAL_ENTRANCE_SIDE = 48.57142857142858
-        const val FOCAL_ESCALATOR_FRONT = 89.88235294117646
-        const val FOCAL_ESCALATOR_SIDE = 79.76470588235294
-        const val FOCAL_STAIR_FRONT = 76.68202764976958
-        const val FOCAL_STAIR_SIDE = 70.23041474654379
+        const val FOCAL_ENTRANCE_FRONT = 72.96703296703298
+        const val FOCAL_ENTRANCE_SIDE = 53.62637362637362
+        const val FOCAL_ESCALATOR_FRONT = 83.29411764705883
+        const val FOCAL_ESCALATOR_SIDE = 73.41176470588236
+        const val FOCAL_STAIR_FRONT = 74.10138248847927
+        const val FOCAL_STAIR_SIDE = 66.17511520737327
     }
 
     val labelMapping = mapOf(
-        "entrance_front" to "entrance at front",
-        "entrance_left" to "entrance at left",
-        "entrance_right" to "entrance at right",
-        "escalator_front" to "escalator at front",
-        "escalator_left" to "escalator at left",
-        "escalator_right" to "escalator at right",
-        "stair_front" to "stair at front",
-        "stair_left" to "stair at left",
-        "stair_right" to "stair at right"
+        "entrance_front" to "entrance in front",
+        "entrance_left" to "entrance on left",
+        "entrance_right" to "entrance on right",
+        "escalator_front" to "escalator in front",
+        "escalator_left" to "escalator on left",
+        "escalator_right" to "escalator on right",
+        "stair_front" to "stair in front",
+        "stair_left" to "stair on left",
+        "stair_right" to "stair on right"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
