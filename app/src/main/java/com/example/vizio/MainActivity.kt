@@ -57,18 +57,18 @@ class MainActivity : ComponentActivity() {
     lateinit var labels: List<String>
     val paint = Paint()
 
-    var scoreThreshold = 90 // initial 90%
-    var distanceThreshold = 2.2 // initial 2.2
-
     var tts: TextToSpeech? = null
     var lastSpokenLabel: String? = null
     var lastSpokenTime: Long = 0
-    var debounceTime = 1000 // initial 3 seconds
     var speak = true
-
     private val REQUEST_CODE_SPEECH_INPUT = 1
-    var currentUnit: String = "inches"
-    var warningEnabled = false
+
+    var scoreThreshold = 90 // initial 90%
+    var distanceThreshold = 2.2 // initial 2.2
+    var debounceTime = 1000 // initial 1 seconds
+    var currentUnit: String = "inches" // initial measurement
+    var warningEnabled = false // initial warning
+
 
     companion object {
         const val INCH_TO_METRE_CONVERSION = 0.0254
@@ -114,10 +114,33 @@ class MainActivity : ComponentActivity() {
         handlerThread.start()
         handler = Handler(handlerThread.looper)
         cameraHandler = CameraHandler(this, handler)
+        loadPreferences()
 
         layoutInitializer = LayoutInitializer(this)
         layoutInitializer.initialize()
     }
+
+    fun savePreferences() {
+        val sharedPref = getSharedPreferences("AppPreferences", Context.MODE_PRIVATE)
+        with (sharedPref.edit()) {
+            putInt("scoreThreshold", scoreThreshold)
+            putFloat("distanceThreshold", distanceThreshold.toFloat())
+            putInt("debounceTime", debounceTime)
+            putString("currentUnit", currentUnit)
+            putBoolean("warningEnabled", warningEnabled)
+            apply()
+        }
+    }
+
+    private fun loadPreferences() {
+        val sharedPref = getSharedPreferences("AppPreferences", Context.MODE_PRIVATE)
+        scoreThreshold = sharedPref.getInt("scoreThreshold", 90)
+        distanceThreshold = sharedPref.getFloat("distanceThreshold", 2.2f).toDouble()
+        debounceTime = sharedPref.getInt("debounceTime", 1000)
+        currentUnit = sharedPref.getString("currentUnit", "inches") ?: "inches"
+        warningEnabled = sharedPref.getBoolean("warningEnabled", false)
+    }
+
 
     fun distanceFinder(focalLength: Double, realObjectWidth: Double, widthInFrame: Double): Double {
         return ((realObjectWidth * focalLength) / widthInFrame) * distanceThreshold
@@ -178,14 +201,17 @@ class MainActivity : ComponentActivity() {
                 VoiceCommand("(?:change )?(?:unit of )?measurements? (?:to|2) (inch|inches|foot|feet|meter|meters|metre|metres|centimeter|centimeters|centimetre|centimetres|millimeter|millimeters|millimetre|millimetres)") { match ->
                     currentUnit = normalizeUnit(match.groups[1]?.value ?: "")
                     warningEnabled = false
+                    savePreferences()
                 },
                 VoiceCommand("(no measurement|no measurements|disable measurement|disable measurements)") { _ ->
                     warningEnabled = true
+                    savePreferences()
                 },
                 VoiceCommand("(?:set )?(?:a )?(bounce|debounce|report) (rate|time) (?:to|2) (\\d+)(?: seconds)?") { match ->
                     val newRate = match.groups[3]?.value?.toIntOrNull()
                     if (newRate != null && newRate > 0) {
                         debounceTime = newRate * 1000
+                        savePreferences()
                     } else {
                         speak = true
                         tts?.speak("Invalid rate.", TextToSpeech.QUEUE_FLUSH, null, null)
@@ -195,6 +221,7 @@ class MainActivity : ComponentActivity() {
                     val newValue = match.groups[2]?.value?.toIntOrNull()
                     if (newValue != null && newValue in 10..99) {
                         scoreThreshold = newValue
+                        savePreferences()
                     } else {
                         speak = true
                         tts?.speak("Invalid threshold value.", TextToSpeech.QUEUE_FLUSH, null, null)
@@ -204,6 +231,7 @@ class MainActivity : ComponentActivity() {
                     val newValue = match.groups[1]?.value?.toDoubleOrNull()
                     if (newValue != null) {
                         distanceThreshold = newValue
+                        savePreferences()
                     } else {
                         speak = true
                         tts?.speak("Invalid distance value.", TextToSpeech.QUEUE_FLUSH, null, null)
