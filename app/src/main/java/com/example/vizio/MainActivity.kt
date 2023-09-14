@@ -10,9 +10,12 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -22,6 +25,9 @@ import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
+import com.example.vizio.MainActivity.Companion.INCH_TO_CM_CONVERSION
+import com.example.vizio.MainActivity.Companion.INCH_TO_METRE_CONVERSION
+import com.example.vizio.MainActivity.Companion.INCH_TO_MM_CONVERSION
 import com.example.vizio.ml.Vizio12
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.support.common.FileUtil
@@ -52,11 +58,12 @@ class MainActivity : ComponentActivity() {
     val paint = Paint()
 
     var scoreThreshold = 90 // initial 90%
+    var distanceThreshold = 2.2 // initial 2.2
 
     var tts: TextToSpeech? = null
     var lastSpokenLabel: String? = null
     var lastSpokenTime: Long = 0
-    var debounceTime = 3000 // initial 3 seconds
+    var debounceTime = 1000 // initial 3 seconds
     var speak = true
 
     private val REQUEST_CODE_SPEECH_INPUT = 1
@@ -64,6 +71,10 @@ class MainActivity : ComponentActivity() {
     var warningEnabled = false
 
     companion object {
+        const val INCH_TO_METRE_CONVERSION = 0.0254
+        const val INCH_TO_CM_CONVERSION = 2.54
+        const val INCH_TO_MM_CONVERSION = 25.4
+
         const val ENTRANCE_WIDTH = 60.666666666666664 //inches
         const val ESCALATOR_WIDTH = 56.666666666666664 //inches
         const val STAIR_WIDTH = 72.33333333333333 //inches
@@ -109,10 +120,39 @@ class MainActivity : ComponentActivity() {
     }
 
     fun distanceFinder(focalLength: Double, realObjectWidth: Double, widthInFrame: Double): Double {
-        return (realObjectWidth * focalLength) / widthInFrame
+        return ((realObjectWidth * focalLength) / widthInFrame) * distanceThreshold
     }
 
-    fun startSpeechRecognition() {
+    fun initializeTTS() {
+        tts = TextToSpeech(this) { status ->
+            if (status != TextToSpeech.ERROR) {
+                val result = tts?.setLanguage(Locale.US)
+                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    // Notify the user that the language data is missing or not supported
+                    Log.e("TTS", "Language not supported or missing data")
+
+                } else {
+                    tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {
+                            // Called when the TTS starts speaking
+                        }
+
+                        override fun onDone(utteranceId: String?) {
+                            // Called when the TTS finishes speaking
+                            initializeSpeechRecognition()
+                        }
+
+                        override fun onError(utteranceId: String?) {
+                        }
+                    })
+                }
+            } else {
+                Log.e("TTS", "Initialization failed")
+            }
+        }
+    }
+
+    fun initializeSpeechRecognition() {
         speak = false
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -135,8 +175,8 @@ class MainActivity : ComponentActivity() {
             val recognizedText = res[0].lowercase(Locale.ROOT)
 
             val voiceCommands = listOf(
-                VoiceCommand("(?:change )?(?:unit of )?measurements? (?:to|2) (inch|inches|foot|feet|metre|metres|centimetre|centimetres|millimetre|millimetres)") { match ->
-                    currentUnit = match.groups[1]?.value ?: ""
+                VoiceCommand("(?:change )?(?:unit of )?measurements? (?:to|2) (inch|inches|foot|feet|meter|meters|metre|metres|centimeter|centimeters|centimetre|centimetres|millimeter|millimeters|millimetre|millimetres)") { match ->
+                    currentUnit = normalizeUnit(match.groups[1]?.value ?: "")
                     warningEnabled = false
                 },
                 VoiceCommand("(no measurement|no measurements|disable measurement|disable measurements)") { _ ->
@@ -158,6 +198,15 @@ class MainActivity : ComponentActivity() {
                     } else {
                         speak = true
                         tts?.speak("Invalid threshold value.", TextToSpeech.QUEUE_FLUSH, null, null)
+                    }
+                },
+                VoiceCommand("(?:distance to ([0-4](?:\\.\\d{1,2})?|5))") { match ->
+                    val newValue = match.groups[1]?.value?.toDoubleOrNull()
+                    if (newValue != null) {
+                        distanceThreshold = newValue
+                    } else {
+                        speak = true
+                        tts?.speak("Invalid distance value.", TextToSpeech.QUEUE_FLUSH, null, null)
                     }
                 }
             )
@@ -181,6 +230,20 @@ class MainActivity : ComponentActivity() {
             }
 
             speak = true
+
+        } else if (resultCode == RESULT_CANCELED) {
+            speak = true
+        }
+    }
+
+    fun normalizeUnit(unit: String): String {
+        return when (unit) {
+            "inch", "inches" -> "inches"
+            "foot", "feet" -> "feet"
+            "meter", "meters", "metre", "metres" -> "metres"
+            "centimeter", "centimeters", "centimetre", "centimetres" -> "centimetres"
+            "millimeter", "millimeters", "millimetre", "millimetres" -> "millimetres"
+            else -> unit
         }
     }
 
@@ -218,39 +281,26 @@ class LayoutInitializer(private val activity: MainActivity) {
     val inputMic: ImageView by lazy { activity.findViewById(R.id.inputMic) }
 
     fun initialize() {
+
+        val vibrator = activity.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+
         inputMic.setOnClickListener {
+            // Trigger haptic feedback
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                // For devices below API level 26
+                vibrator.vibrate(500)
+            }
+
             val utteranceId = "prompt_utterance_id"
             activity.tts?.speak("How can Vizio help you?", TextToSpeech.QUEUE_FLUSH, null, utteranceId)
         }
 
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(p0: SurfaceTexture, p1: Int, p2: Int) {
-                activity.tts = TextToSpeech(activity) { status ->
-                    if (status != TextToSpeech.ERROR) {
-                        val result = activity.tts?.setLanguage(Locale.US)
-                        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                            // Notify the user that the language data is missing or not supported
-                            Log.e("TTS", "Language not supported or missing data")
 
-                        } else {
-                            activity.tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                                override fun onStart(utteranceId: String?) {
-                                    // Called when the TTS starts speaking
-                                }
-
-                                override fun onDone(utteranceId: String?) {
-                                    // Called when the TTS finishes speaking
-                                    activity.startSpeechRecognition()
-                                }
-
-                                override fun onError(utteranceId: String?) {
-                                }
-                            })
-                        }
-                    } else {
-                        Log.e("TTS", "Initialization failed")
-                    }
-                }
+                activity.initializeTTS()
                 activity.cameraHandler.openCamera(activity.cameraManager, textureView)
             }
 
@@ -345,37 +395,36 @@ class LayoutInitializer(private val activity: MainActivity) {
                         }
 
                         val roundedScore = String.format("%.2f", score * 100)
+                        val normalizedUnit = activity.normalizeUnit(activity.currentUnit)
 
-                        val normalizedUnit = when (activity.currentUnit) {
-                            "inch" -> "inches"
-                            "foot" -> "feet"
-                            "metre" -> "metres"
-                            "centimetre" -> "centimetres"
-                            "millimetre" -> "millimetres"
-                            else -> activity.currentUnit
+                        // Convert distance to the desired unit
+                        val convertedDistance = when (normalizedUnit) {
+                            "inches" -> distance.roundToInt()
+                            "feet" -> (distance / 12.0).roundToInt()
+                            "metres" -> String.format("%.2f", distance * INCH_TO_METRE_CONVERSION).toDouble()
+                            "centimetres" -> (distance * INCH_TO_CM_CONVERSION).roundToInt()
+                            "millimetres" -> (distance * INCH_TO_MM_CONVERSION).roundToInt()
+                            else -> distance.roundToInt()
                         }
 
-                        // Generate the base feedback first
-                        audioFeedback = if (activity.warningEnabled) {
-                            if (distance < 50) "$formattedLabel Be careful!" else formattedLabel
-                        } else {
-                            when (normalizedUnit) {
-                                "inches" -> "$formattedLabel ${distance.roundToInt()} inches away"
-                                "feet" -> "$formattedLabel ${(distance / 12.0).roundToInt()} feet away"
-                                "metres" -> "$formattedLabel ${String.format("%.2f", distance * 0.0254)} metres away"
-                                "centimetres" -> "$formattedLabel ${(distance * 2.54).roundToInt()} centimetres away"
-                                "millimetres" -> "$formattedLabel ${(distance * 25.4).roundToInt()} millimetres away"
-                                else -> "$formattedLabel ${distance.roundToInt()} inches away"
+                        audioFeedback = if (activity.warningEnabled || distance < 50) {
+                            if (distance < 50) {
+                                // Trigger haptic feedback
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+                                } else {
+                                    // For devices below API level 26
+                                    vibrator.vibrate(500)
+                                }
+                                "$formattedLabel Be careful!"
+                            } else {
+                                formattedLabel
                             }
+                        } else {
+                            "$formattedLabel $convertedDistance $normalizedUnit away"
                         }
-                        textFeedback = when (normalizedUnit) {
-                            "inches" -> "$formattedLabel $roundedScore% ${distance.roundToInt()} inches away"
-                            "feet" -> "$formattedLabel $roundedScore% ${(distance / 12.0).roundToInt()} feet away"
-                            "metres" -> "$formattedLabel ${String.format("%.2f", distance * 0.0254)} metres away"
-                            "centimetres" -> "$formattedLabel $roundedScore% ${(distance * 2.54).roundToInt()} centimetres away"
-                            "millimetres" ->"$formattedLabel $roundedScore% ${(distance * 25.4).roundToInt()} millimetres away"
-                            else -> "$formattedLabel $roundedScore% ${distance.roundToInt()} inches away"
-                        }
+
+                        textFeedback = "$formattedLabel $roundedScore% $convertedDistance $normalizedUnit away"
 
                         canvas.drawRect(RectF(locations.get(x+1)*w, locations.get(x)*h, locations.get(x+3)*w, locations.get(x+2)*h), activity.paint)
                         activity.paint.style = Paint.Style.FILL
