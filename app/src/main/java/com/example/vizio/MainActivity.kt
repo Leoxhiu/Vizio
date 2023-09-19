@@ -21,6 +21,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import android.view.TextureView
+import android.view.View
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -158,11 +159,10 @@ class MainActivity : ComponentActivity() {
                     tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                         override fun onStart(utteranceId: String?) {
                             // Called when the TTS starts speaking
+                            initializeSpeechRecognition()
                         }
 
                         override fun onDone(utteranceId: String?) {
-                            // Called when the TTS finishes speaking
-                            initializeSpeechRecognition()
                         }
 
                         override fun onError(utteranceId: String?) {
@@ -243,18 +243,26 @@ class MainActivity : ComponentActivity() {
             for (command in voiceCommands) {
                 val regex = command.pattern.toRegex()
                 val matchResult = regex.find(recognizedText)
+                val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
                 if (matchResult != null) {
                     command.handler(matchResult)
                     matched = true
                     speak = true
                     tts?.speak("Your command will be executed.", TextToSpeech.QUEUE_FLUSH, null, null)
+                    // Trigger haptic feedback
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+                    } else {
+                        // For devices below API level 26
+                        vibrator.vibrate(500)
+                    }
                     break
                 }
             }
 
             if (!matched) {
                 speak = true
-                tts?.speak("Unrecognized command. Please try again.", TextToSpeech.QUEUE_FLUSH, null, null)
+                tts?.speak("Unrecognised command. Please try again.", TextToSpeech.QUEUE_FLUSH, null, null)
             }
 
             speak = true
@@ -306,13 +314,13 @@ class LayoutInitializer(private val activity: MainActivity) {
 
     val imageView: ImageView by lazy { activity.findViewById(R.id.ImageView) }
     val textureView: TextureView by lazy { activity.findViewById(R.id.textureView) }
-    val inputMic: ImageView by lazy { activity.findViewById(R.id.inputMic) }
+    val inputArea: View by lazy { activity.findViewById(R.id.inputArea) }
 
     fun initialize() {
 
         val vibrator = activity.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
 
-        inputMic.setOnClickListener {
+        inputArea.setOnClickListener {
             // Trigger haptic feedback
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))

@@ -3,7 +3,7 @@
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
-    
+
     <TextureView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -16,13 +16,22 @@
         android:id="@+id/ImageView"
         android:contentDescription="@string/display" />
 
-    <!--creating a simple image view for mic-->
+    <!-- Transparent View to define the clickable area -->
+    <View
+        android:id="@+id/inputArea"
+        android:layout_width="match_parent"
+        android:layout_height="300dp"
+        android:layout_alignParentBottom="true"
+        android:background="@android:color/transparent"/>
+
+    <!-- Mic ImageView centered within the clickable area -->
     <ImageView
         android:id="@+id/inputMic"
         android:layout_width="150dp"
         android:layout_height="150dp"
+        android:layout_centerInParent="true"
+        android:layout_alignTop="@id/inputArea"
         android:layout_centerHorizontal="true"
-        android:layout_marginTop="550dp"
         android:src="@drawable/baseline_mic_24"
         android:contentDescription="@string/uservoiceinput" />
 
