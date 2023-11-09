@@ -29,7 +29,7 @@ import androidx.core.content.ContextCompat
 import com.example.vizio.MainActivity.Companion.INCH_TO_CM_CONVERSION
 import com.example.vizio.MainActivity.Companion.INCH_TO_METRE_CONVERSION
 import com.example.vizio.MainActivity.Companion.INCH_TO_MM_CONVERSION
-import com.example.vizio.ml.Vizio12
+import com.example.vizio.ml.Vizio
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.support.common.FileUtil
 import org.tensorflow.lite.support.common.ops.NormalizeOp
@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
     lateinit var cameraHandler: CameraHandler
     lateinit var handler: Handler
     lateinit var bitmap: Bitmap
-    lateinit var model: Vizio12
+    lateinit var model: Vizio
     lateinit var imageProcessor: ImageProcessor
     lateinit var labels: List<String>
     val paint = Paint()
@@ -65,11 +65,9 @@ class MainActivity : ComponentActivity() {
     private val REQUEST_CODE_SPEECH_INPUT = 1
 
     var scoreThreshold = 90 // initial 90%
-    var distanceThreshold = 2.2 // initial 2.2
     var debounceTime = 1000 // initial 1 seconds
     var currentUnit: String = "inches" // initial measurement
     var warningEnabled = false // initial warning
-
 
     companion object {
         const val INCH_TO_METRE_CONVERSION = 0.0254
@@ -110,7 +108,7 @@ class MainActivity : ComponentActivity() {
             .add(ResizeOp(320, 320, ResizeOp.ResizeMethod.BILINEAR))
             .add(NormalizeOp(0f, 255f)) // Normalize by scaling with 1/255
             .build()
-        model = Vizio12.newInstance(this)
+        model = Vizio.newInstance(this)
         val handlerThread = HandlerThread("videoThread")
         handlerThread.start()
         handler = Handler(handlerThread.looper)
@@ -124,8 +122,6 @@ class MainActivity : ComponentActivity() {
     fun savePreferences() {
         val sharedPref = getSharedPreferences("AppPreferences", Context.MODE_PRIVATE)
         with (sharedPref.edit()) {
-            putInt("scoreThreshold", scoreThreshold)
-            putFloat("distanceThreshold", distanceThreshold.toFloat())
             putInt("debounceTime", debounceTime)
             putString("currentUnit", currentUnit)
             putBoolean("warningEnabled", warningEnabled)
@@ -135,8 +131,6 @@ class MainActivity : ComponentActivity() {
 
     private fun loadPreferences() {
         val sharedPref = getSharedPreferences("AppPreferences", Context.MODE_PRIVATE)
-        scoreThreshold = sharedPref.getInt("scoreThreshold", 90)
-        distanceThreshold = sharedPref.getFloat("distanceThreshold", 2.2f).toDouble()
         debounceTime = sharedPref.getInt("debounceTime", 1000)
         currentUnit = sharedPref.getString("currentUnit", "inches") ?: "inches"
         warningEnabled = sharedPref.getBoolean("warningEnabled", false)
@@ -144,7 +138,7 @@ class MainActivity : ComponentActivity() {
 
 
     fun distanceFinder(focalLength: Double, realObjectWidth: Double, widthInFrame: Double): Double {
-        return ((realObjectWidth * focalLength) / widthInFrame) * distanceThreshold
+        return ((realObjectWidth * focalLength) / widthInFrame)
     }
 
     fun initializeTTS() {
@@ -198,7 +192,9 @@ class MainActivity : ComponentActivity() {
             val recognizedText = res[0].lowercase(Locale.ROOT)
 
             val voiceCommands = listOf(
-                VoiceCommand("(?:change )?(?:unit of )?measurements? (?:to|2) (inch|inches|foot|feet|meter|meters|metre|metres|centimeter|centimeters|centimetre|centimetres|millimeter|millimeters|millimetre|millimetres)") { match ->
+                VoiceCommand(
+                    "(?:change )?(?:unit of )?measurements? (?:to|2) " +
+                            "(inch|inches|foot|feet|meter|meters|metre|metres|centimeter|centimeters|centimetre|centimetres|millimeter|millimeters|millimetre|millimetres)") { match ->
                     currentUnit = normalizeUnit(match.groups[1]?.value ?: "")
                     warningEnabled = false
                     savePreferences()
@@ -217,26 +213,6 @@ class MainActivity : ComponentActivity() {
                         tts?.speak("Invalid rate.", TextToSpeech.QUEUE_FLUSH, null, null)
                     }
                 },
-                VoiceCommand("(thresholds? (?:change )?to (\\d{2}))") { match ->
-                    val newValue = match.groups[2]?.value?.toIntOrNull()
-                    if (newValue != null && newValue in 10..99) {
-                        scoreThreshold = newValue
-                        savePreferences()
-                    } else {
-                        speak = true
-                        tts?.speak("Invalid threshold value.", TextToSpeech.QUEUE_FLUSH, null, null)
-                    }
-                },
-                VoiceCommand("(?:distance to ([0-4](?:\\.\\d{1,2})?|5))") { match ->
-                    val newValue = match.groups[1]?.value?.toDoubleOrNull()
-                    if (newValue != null) {
-                        distanceThreshold = newValue
-                        savePreferences()
-                    } else {
-                        speak = true
-                        tts?.speak("Invalid distance value.", TextToSpeech.QUEUE_FLUSH, null, null)
-                    }
-                }
             )
 
             var matched = false
@@ -349,7 +325,6 @@ class LayoutInitializer(private val activity: MainActivity) {
 
             override fun onSurfaceTextureUpdated(p0: SurfaceTexture) {
                 activity.bitmap = textureView.bitmap!!
-//                bitmap = Bitmap.createScaledBitmap(bitmap, 320, 320,true)
 
                 val inputFeature0 = TensorBuffer.createFixedSize(intArrayOf(1, 320, 320, 3), DataType.FLOAT32)
                 var tensorImage = TensorImage(DataType.FLOAT32)
